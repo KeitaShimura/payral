@@ -114,7 +114,12 @@ jobs:
       - name: Run migrations
         env:
           DATABASE_URL: postgres://payfin:payfin@localhost:5432/payfin_test?sslmode=disable
-        run: make migrate-up
+        run: |
+          if ls backend/migrations/*.sql 2>/dev/null; then
+            make migrate-up
+          else
+            echo "No migration files found, skipping"
+          fi
 
       # race detector・カバレッジ付きでテスト実行
       - name: Run tests

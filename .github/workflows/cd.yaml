@@ -9,10 +9,10 @@ on:
 
 env:
   AWS_REGION: ap-northeast-1
-  ECR_REPOSITORY: payfin-api
-  ECS_CLUSTER: payfin-cluster
-  ECS_SERVICE: payfin-api
-  ECS_TASK_DEFINITION: payfin-api
+  ECR_REPOSITORY: payral-api
+  ECS_CLUSTER: payral-cluster
+  ECS_SERVICE: payral-api
+  ECS_TASK_DEFINITION: payral-api
 
 jobs:
   deploy:
@@ -60,7 +60,7 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: payfin-api
+          container-name: payral-api
           image: ${{ steps.build-image.outputs.image }}
 
       # デプロイ完了までECSサービスの安定化を待機

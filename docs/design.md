@@ -1,6 +1,6 @@
 # 設計書
 
-> Go + PostgreSQL + Redis + AWS ECS Fargate
+> Go + PostgreSQL (sqlx) + Redis + AWS ECS Fargate
 
 ---
 
@@ -8,10 +8,12 @@
 
 ### 認証
 
-| ID    | ユースケース       | Actor            | 優先度  |
-| ----- | ------------------ | ---------------- | ------- |
-| UC-01 | ユーザー登録       | 未認証ユーザー   | 🔴 必須 |
-| UC-02 | ログイン / JWT発行 | 登録済みユーザー | 🔴 必須 |
+| ID    | ユースケース             | Actor            | 優先度  |
+| ----- | ------------------------ | ---------------- | ------- |
+| UC-01 | ユーザー登録             | 未認証ユーザー   | 🔴 必須 |
+| UC-02 | ログイン / JWT発行       | 登録済みユーザー | 🔴 必須 |
+| UC-11 | OIDCログイン / JWT発行   | 未認証ユーザー   | 🔴 必須 |
+| UC-12 | OIDCプロバイダー連携解除 | 認証済みユーザー | 🔵 推奨 |
 
 ### 口座管理
 
@@ -68,7 +70,7 @@ SELECT * FROM accounts WHERE id IN (from_id, to_id) FOR UPDATE;
 ```
 
 **④ ビジネスルール検証（Domain層）**
-`Account.Withdraw()` でドメイン層の残高チェック。残高不足なら `ErrInsufficientBalance` を返しトランザクションをロールバック。
+`Account.Withdraw()` でドメイン層の残高チェック。残高不足の場合は `ErrInsufficientBalance` を返しトランザクションをロールバック。
 
 ```
 if account.Balance < amount → ErrInsufficientBalance
@@ -167,12 +169,45 @@ var (
 ```go
 // domain/repository/account_repository.go
 type AccountRepository interface {
-    GetByIDForUpdate(ctx context.Context, tx *sql.Tx, id uuid.UUID) (*model.Account, error)
-    Update(ctx context.Context, tx *sql.Tx, account *model.Account) error
+    GetByIDForUpdate(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (*model.Account, error)
+    Update(ctx context.Context, tx *sqlx.Tx, account *model.Account) error
     Create(ctx context.Context, account *model.Account) error
     GetByUserID(ctx context.Context, userID uuid.UUID) ([]*model.Account, error)
 }
 ```
+
+### Infrastructure 実装例（sqlx）
+
+```go
+// infrastructure/postgres/account_repository.go
+type accountRepository struct {
+    db *sqlx.DB
+}
+
+func (r *accountRepository) GetByIDForUpdate(ctx context.Context, tx *sqlx.Tx, id uuid.UUID) (*model.Account, error) {
+    var account model.Account
+    query := `SELECT * FROM accounts WHERE id = $1 FOR UPDATE`
+    if err := tx.GetContext(ctx, &account, query, id); err != nil {
+        return nil, err
+    }
+    return &account, nil
+}
+
+func (r *accountRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*model.Account, error) {
+    var accounts []*model.Account
+    query := `SELECT * FROM accounts WHERE user_id = $1`
+    if err := r.db.SelectContext(ctx, &accounts, query, userID); err != nil {
+        return nil, err
+    }
+    return accounts, nil
+}
+```
+
+> **sqlx の主な利点**
+>
+> - `GetContext` / `SelectContext` で struct へ自動マッピング（手動 `rows.Scan` 不要）
+> - Named Query（`:column_name`）で INSERT 時の可読性向上
+> - `sqlx.Tx` は `sql.Tx` の上位互換で既存コードと混在可能
 
 ---
 
@@ -187,24 +222,39 @@ type AccountRepository interface {
 
 ### テーブル一覧
 
-| テーブル       | 用途                     |
-| -------------- | ------------------------ |
-| `users`        | ユーザー認証情報         |
-| `accounts`     | 口座・残高管理           |
-| `transactions` | 送金レコード（変更不可） |
-| `audit_logs`   | 監査ログ（変更不可）     |
+| テーブル         | 用途                     |
+| ---------------- | ------------------------ |
+| `users`          | ユーザー認証情報         |
+| `oauth_accounts` | OIDCプロバイダー連携情報 |
+| `accounts`       | 口座・残高管理           |
+| `transactions`   | 送金レコード（変更不可） |
+| `audit_logs`     | 監査ログ（変更不可）     |
 
 ### users
 
-| カラム          | 型           | 備考                           |
-| --------------- | ------------ | ------------------------------ |
-| `id`            | uuid         | PK / DEFAULT gen_random_uuid() |
-| `email`         | varchar(255) | UNIQUE NOT NULL / index        |
-| `password_hash` | varchar(255) | bcrypt hash                    |
-| `name`          | varchar(100) | NOT NULL                       |
-| `status`        | varchar(20)  | 'active' \| 'suspended'        |
-| `created_at`    | timestamptz  | DEFAULT NOW()                  |
-| `updated_at`    | timestamptz  | DEFAULT NOW()                  |
+| カラム          | 型           | 備考                                 |
+| --------------- | ------------ | ------------------------------------ |
+| `id`            | uuid         | PK / DEFAULT gen_random_uuid()       |
+| `email`         | varchar(255) | UNIQUE NOT NULL / index              |
+| `password_hash` | varchar(255) | bcrypt hash。OIDC専用ユーザーは NULL |
+| `name`          | varchar(100) | NOT NULL                             |
+| `status`        | varchar(20)  | 'active' \| 'suspended'              |
+| `created_at`    | timestamptz  | DEFAULT NOW()                        |
+| `updated_at`    | timestamptz  | DEFAULT NOW()                        |
+
+### oauth_accounts
+
+| カラム       | 型           | 備考                                                |
+| ------------ | ------------ | --------------------------------------------------- |
+| `id`         | uuid         | PK / DEFAULT gen_random_uuid()                      |
+| `user_id`    | uuid         | FK → users.id / index                               |
+| `provider`   | varchar(50)  | 'google' \| 'github' など                           |
+| `subject`    | varchar(255) | プロバイダー側のユーザーID（OIDCの `sub` クレーム） |
+| `email`      | varchar(255) | プロバイダーから取得したメール（参照用）            |
+| `created_at` | timestamptz  | DEFAULT NOW()                                       |
+| `updated_at` | timestamptz  | DEFAULT NOW()                                       |
+
+UNIQUE制約: `(provider, subject)`
 
 ### accounts
 
@@ -336,18 +386,20 @@ CREATE INDEX idx_audit_user_id ON audit_logs(user_id);
 
 ## APIエンドポイント設計
 
-| Method | Path                  | 説明                                 | Auth                  |
-| ------ | --------------------- | ------------------------------------ | --------------------- |
-| `POST` | `/v1/auth/register`   | ユーザー登録                         | 不要                  |
-| `POST` | `/v1/auth/login`      | ログイン・JWT発行                    | 不要                  |
-| `POST` | `/v1/accounts`        | 口座作成                             | JWT                   |
-| `GET`  | `/v1/accounts`        | 自分の口座一覧                       | JWT                   |
-| `GET`  | `/v1/accounts/:id`    | 口座詳細・残高                       | JWT                   |
-| `POST` | `/v1/transfers`       | **送金実行**（コア）                 | JWT + Idempotency-Key |
-| `GET`  | `/v1/transfers`       | 取引履歴（カーソルページネーション） | JWT                   |
-| `GET`  | `/v1/transfers/:id`   | 取引詳細                             | JWT                   |
-| `POST` | `/v1/webhooks/stripe` | Stripe Webhook受信                   | Stripe署名検証        |
-| `GET`  | `/health`             | ヘルスチェック                       | 不要                  |
+| Method | Path                      | 説明                                 | Auth                  |
+| ------ | ------------------------- | ------------------------------------ | --------------------- |
+| `POST` | `/v1/auth/register`       | ユーザー登録                         | 不要                  |
+| `POST` | `/v1/auth/login`          | ログイン・JWT発行                    | 不要                  |
+| `GET`  | `/v1/auth/oidc/authorize` | OIDCプロバイダーへリダイレクト       | 不要                  |
+| `GET`  | `/v1/auth/oidc/callback`  | コールバック受信・JWT発行            | 不要                  |
+| `POST` | `/v1/accounts`            | 口座作成                             | JWT                   |
+| `GET`  | `/v1/accounts`            | 自分の口座一覧                       | JWT                   |
+| `GET`  | `/v1/accounts/:id`        | 口座詳細・残高                       | JWT                   |
+| `POST` | `/v1/transfers`           | **送金実行**（コア）                 | JWT + Idempotency-Key |
+| `GET`  | `/v1/transfers`           | 取引履歴（カーソルページネーション） | JWT                   |
+| `GET`  | `/v1/transfers/:id`       | 取引詳細                             | JWT                   |
+| `POST` | `/v1/webhooks/stripe`     | Stripe Webhook受信                   | Stripe署名検証        |
+| `GET`  | `/health`                 | ヘルスチェック                       | 不要                  |
 
 ### 送金リクエスト / レスポンス
 
@@ -388,6 +440,8 @@ CREATE INDEX idx_audit_user_id ON audit_logs(user_id);
 | 二重送金            | Redis で冪等キー管理（SETNX + TTL）             | TransferUsecase          |
 | 残高競合            | SELECT FOR UPDATE（行ロック）                   | PostgreSQL / accountRepo |
 | 不正ログイン        | bcrypt ハッシュ化・JWT 有効期限15分             | AuthUsecase              |
+| OIDC CSRF           | state パラメーター（UUID）を Redis に保存・検証 | OIDCCallbackHandler      |
+| OIDCトークン改ざん  | nonce をセッションに埋め込み id_token で検証    | OIDCCallbackHandler      |
 | DoS 攻撃            | IP単位レート制限（Redis sliding window）        | RateLimitMiddleware      |
 | SQLインジェクション | プレースホルダ使用（sqlx）                      | infrastructure/postgres  |
 | シークレット漏洩    | Secrets Manager・Git に秘匿情報をコミットしない | インフラ設計             |
@@ -460,3 +514,45 @@ RDS Read Replica を用意し、参照系クエリ（取引履歴・残高照会
 ### 監査ログのスケール
 
 現状は PostgreSQL の `audit_logs` テーブルに INSERT のみで管理する。月間イベント数が膨大になった場合は S3 + Athena への移行を想定している。S3 は大量データに強く、Athena でアドホッククエリが可能。
+
+### 分散ロック vs DBトランザクション
+
+UC-05の送金はサーバー内で数百ms以内に完結するため `SELECT FOR UPDATE` で十分。長時間フロー（ユーザー操作を挟む複数ステップ）にDBトランザクションを使うとロックが保持されたまま離脱・クラッシュが起き得るため、Redisの分散ロックを使う。
+
+| ケース                       | 手段                  | 理由                                       |
+| ---------------------------- | --------------------- | ------------------------------------------ |
+| 送金（現在）                 | SELECT FOR UPDATE     | 数百ms以内で完結するDBトランザクション     |
+| 冪等性管理（現在）           | Redis SETNX TTL=24h   | 重複リクエスト防止（送金ロックとは別用途） |
+| 複数ステップ予約（将来対応） | Redis SET NX EX {TTL} | ユーザー離脱・クラッシュ時に自動解除       |
+
+将来「送金予約（funds hold）→ 後で確定」のようなフローを追加する場合は以下のパターンを使う。
+
+```
+SET lock:transfer:{account_id} {user_id} NX EX 300
+```
+
+- `NX`: 他ユーザーがロック中の場合は取得失敗
+- `EX 300`: 5分で自動解除（ユーザー離脱・タイムアウト対応）
+- 確定時のDB更新は短時間トランザクションで行う
+
+> 現状の Redis SETNX は冪等キー（`idem:{key}`）専用。分散ロック（`lock:{resource}`）とキー名前空間を分けて管理する。
+
+### OpenID Connect（OIDC）認証フロー
+
+メール/パスワード認証と並行してOIDCをサポートする。認証後は内部JWTを発行するため、既存の認可ミドルウェアは変更不要。
+
+```
+① GET /v1/auth/oidc/authorize?provider=google
+   └─ state（UUID）と nonce を生成し Redis に保存（TTL=10分）
+   └─ プロバイダーの Authorization Endpoint へリダイレクト
+
+② GET /v1/auth/oidc/callback?code=...&state=...
+   └─ Redis で state を検証（CSRF防止）
+   └─ Authorization Code を Token Endpoint へ送信し id_token を取得
+   └─ id_token の nonce / aud / iss を検証
+   └─ sub クレームで oauth_accounts を検索
+      ├─ 既存レコードあり → 対応する users.id で JWT 発行
+      └─ 未登録 → users + oauth_accounts を同一トランザクションで INSERT → JWT 発行
+```
+
+`users.password_hash` は OIDC専用ユーザーの場合 NULL。`oauth_accounts` テーブルで `(provider, subject)` の UNIQUE 制約により同一プロバイダーアカウントの二重登録を防ぐ。

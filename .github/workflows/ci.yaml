@@ -55,7 +55,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.64
+          version: v2.12
           args: --timeout=5m --verbose
           skip-cache: true
           skip-save-cache: true
@@ -107,7 +107,6 @@ jobs:
           go mod download
 
       - name: Run migrations
-        working-directory: backend
         env:
           DATABASE_URL: postgres://payfin:payfin@localhost:5432/payfin_test?sslmode=disable
         run: make migrate-up

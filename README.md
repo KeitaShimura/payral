@@ -100,6 +100,17 @@ graph TB
 | API テスト         | Tavern 2.x        | YAMLで宣言的にREST/gRPCテスト         |
 | E2E                | Playwright 1.61.0 | ブラウザ操作・送金フロー自動テスト    |
 
+### モバイル（Flutter）
+
+| カテゴリ          | 技術               | 用途                                     |
+| ----------------- | ------------------ | ---------------------------------------- |
+| 言語              | Dart 3.x           |                                          |
+| フレームワーク    | Flutter 3.x        |                                          |
+| アーキテクチャ    | Clean Architecture | Domain / Data / Presentation の3層構成   |
+| 状態管理          | Riverpod 3.x       | `AsyncNotifier` で Presentation 層を管理 |
+| ナビゲーション    | go_router 14.x     | 宣言的ルーティング                       |
+| HTTP クライアント | Dio 5.x            | JWT インターセプター・エラーハンドリング |
+
 ### インフラ / その他
 
 | カテゴリ       | 技術                                                  |
@@ -128,12 +139,26 @@ payfin/
 │   ├── migrations/
 │   ├── Dockerfile
 │   └── Makefile
-├── frontend/                # Next.js（ログイン・送金・取引履歴）
+├── mobile/                  # Flutter（ログイン・送金・取引履歴）
+│   ├── lib/
+│   │   ├── features/
+│   │   │   ├── auth/
+│   │   │   │   ├── domain/          # entity / repository interface / usecase
+│   │   │   │   ├── data/            # datasource / repository impl
+│   │   │   │   └── presentation/    # page / widget / notifier
+│   │   │   ├── account/
+│   │   │   └── transfer/
+│   │   └── core/
+│   │       ├── network/             # Dio + JWT interceptor
+│   │       ├── router/              # go_router
+│   │       └── error/               # Failure types
+│   └── test/
+├── web/                     # React（Web版、追加予定）
 ├── terraform/               # VPC / ECS / RDS / Redis / SQS
 ├── e2e/                     # Playwright
 ├── tests/tavern/            # Tavern API テスト
 ├── docs/design.md           # 設計書
-├── docker-compose.yml
+├── docker-compose.yaml
 └── README.md
 ```
 

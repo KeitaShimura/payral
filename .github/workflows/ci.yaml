@@ -1,0 +1,195 @@
+name: CI
+
+# main・developへのpush、タグ、PR、手動実行でトリガー
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  fmt:
+    name: Go Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # go.modからGoバージョンを取得
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          go mod tidy
+          go mod download
+
+      # フォーマット差分があればdiffを表示してfail
+      - name: Run go fmt
+        working-directory: backend
+        run: |
+          fmt_output=$(gofmt -s -d .)
+          if [ -n "$fmt_output" ]; then
+            echo "Code is not formatted. Run 'gofmt -s -w .' to fix."
+            echo "$fmt_output"
+            exit 1
+          fi
+
+  lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # golangci-lint-actionが独自キャッシュを管理するためcache無効化
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache: false
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          args: --timeout=5m --verbose
+          skip-cache: true
+          skip-save-cache: true
+          working-directory: backend
+
+  test:
+    name: Go Test
+    runs-on: ubuntu-latest
+
+    services:
+      # 統合テスト用PostgreSQL
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: payfin
+          POSTGRES_PASSWORD: payfin
+          POSTGRES_DB: payfin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      # 統合テスト用Redis
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          go mod tidy
+          go mod download
+
+      - name: Install migrate
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.18.1/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate /usr/local/bin/
+
+      - name: Run migrations
+        env:
+          DATABASE_URL: postgres://payfin:payfin@localhost:5432/payfin_test?sslmode=disable
+        run: |
+          if ls backend/migrations/*.sql 2>/dev/null; then
+            make migrate-up
+          else
+            echo "No migration files found, skipping"
+          fi
+
+      # race detector・カバレッジ付きでテスト実行
+      - name: Run tests
+        working-directory: backend
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: payfin_test
+          DB_USER: payfin
+          DB_PASSWORD: payfin
+          REDIS_ADDR: localhost:6379
+        run: go test -v -race -cover ./...
+
+  flutter-fmt:
+    name: Flutter Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # stable チャンネルの最新 Flutter を取得
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      # フォーマット差分があればdiffを表示してfail
+      - name: Check formatting
+        working-directory: mobile
+        run: dart format --output=none --set-exit-if-changed .
+
+  flutter-lint:
+    name: Flutter Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      # analysis_options.yaml のルールに従って静的解析
+      - name: Run flutter analyze
+        working-directory: mobile
+        run: flutter analyze
+
+  flutter-test:
+    name: Flutter Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      # カバレッジ付きでテスト実行
+      - name: Run tests
+        working-directory: mobile
+        run: flutter test --coverage

@@ -254,7 +254,7 @@ func (r *accountRepository) GetByUserID(ctx context.Context, userID uuid.UUID) (
 | `created_at` | timestamptz  | DEFAULT NOW()                                       |
 | `updated_at` | timestamptz  | DEFAULT NOW()                                       |
 
-UNIQUE制約: `(provider, subject)`
+> UNIQUE 制約: `(provider, subject)`
 
 ### accounts
 
@@ -461,6 +461,8 @@ PostgreSQL・Redis ともに **CP系**（Consistency + Partition Tolerance）を
 
 **金融システムでは整合性 > 可用性**。残高が合わないことは許容できないが、一時的にサービスが重くなることは許容できる。
 
+---
+
 ## 通知ファンアウト設計（SNS + SQS）
 
 SQS 単体は Point-to-Point（1対1）のため、通知チャンネルが増えるたびに送金ロジックの変更が必要になる。
@@ -476,6 +478,8 @@ Transfer Service
 ```
 
 新しい通知チャンネル（Slack など）を追加するときも、SNS に SQS をサブスクライブするだけで送金ロジックへの変更ゼロ。
+
+---
 
 ## 設計ノート
 

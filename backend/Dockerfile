@@ -12,10 +12,10 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /payfin ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -o /payral ./cmd/api
 
 # production stage
 FROM gcr.io/distroless/static-debian12 AS prod
-COPY --from=build /payfin /payfin
+COPY --from=build /payral /payral
 EXPOSE 8080
-ENTRYPOINT ["/payfin"]
+ENTRYPOINT ["/payral"]

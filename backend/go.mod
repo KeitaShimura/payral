@@ -1,3 +1,3 @@
-module github.com/KeitaShimura/payfin/backend
+module github.com/KeitaShimura/payral/backend
 
 go 1.26.4

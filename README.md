@@ -1,4 +1,4 @@
-# payfin
+# payral
 
 > 送金・入金・口座管理API
 
@@ -72,7 +72,7 @@ graph TB
 1. Transfer Service `──►` Stripe API（①入金を依頼）
 2. Stripe `──►` Transfer Service（②入金完了をWebhookで通知 → 口座残高に反映）
 
-**送金フロー**（Stripe不要・payfin内で完結）
+**送金フロー**（Stripe不要・payral内で完結）
 
 - 自分の口座 `──►` 相手の口座（RDS内のトランザクションのみ）
 
@@ -127,7 +127,7 @@ graph TB
 ## ディレクトリ構成
 
 ```
-payfin/
+payral/
 ├── backend/
 │   ├── cmd/server/main.go
 │   ├── internal/
@@ -177,8 +177,8 @@ payfin/
 ### 起動
 
 ```bash
-git clone https://github.com/{your-name}/payfin.git
-cd payfin
+git clone https://github.com/{your-name}/payral.git
+cd payral
 docker-compose up -d
 make migrate-up
 curl http://localhost:8080/health

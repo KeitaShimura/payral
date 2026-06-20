@@ -26,15 +26,15 @@ services:
   postgres:
     image: postgres:17
     environment:
-      POSTGRES_USER: payfin
-      POSTGRES_PASSWORD: payfin
-      POSTGRES_DB: payfin
+      POSTGRES_USER: payral
+      POSTGRES_PASSWORD: payral
+      POSTGRES_DB: payral
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U payfin"]
+      test: ["CMD-SHELL", "pg_isready -U payral"]
       interval: 5s
       timeout: 5s
       retries: 5

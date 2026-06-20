@@ -70,9 +70,9 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_USER: payfin
-          POSTGRES_PASSWORD: payfin
-          POSTGRES_DB: payfin_test
+          POSTGRES_USER: payral
+          POSTGRES_PASSWORD: payral
+          POSTGRES_DB: payral_test
         ports:
           - 5432:5432
         options: >-
@@ -113,7 +113,7 @@ jobs:
 
       - name: Run migrations
         env:
-          DATABASE_URL: postgres://payfin:payfin@localhost:5432/payfin_test?sslmode=disable
+          DATABASE_URL: postgres://payral:payral@localhost:5432/payral_test?sslmode=disable
         run: |
           if ls backend/migrations/*.sql 2>/dev/null; then
             make migrate-up
@@ -127,9 +127,9 @@ jobs:
         env:
           DB_HOST: localhost
           DB_PORT: 5432
-          DB_NAME: payfin_test
-          DB_USER: payfin
-          DB_PASSWORD: payfin
+          DB_NAME: payral_test
+          DB_USER: payral
+          DB_PASSWORD: payral
           REDIS_ADDR: localhost:6379
         run: go test -v -race -cover ./...
 

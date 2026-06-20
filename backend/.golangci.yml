@@ -1,0 +1,71 @@
+version: "2"
+
+run:
+  concurrency: 4
+  timeout: 5m
+  issues-exit-code: 2
+  tests: false
+  modules-download-mode: readonly
+  go: "1.26"
+
+linters:
+  enable:
+    # --- 正確性・安全性（金融システムのため最重視） ---
+    - errcheck          # エラー握り潰し検出
+    - govet             # 構造体コピーなど基本的なバグ
+    - staticcheck       # 包括的な静的解析
+    - gosimple          # 冗長なコードの簡略化
+    - ineffassign       # 無効な代入
+    - unused            # 未使用コード
+    - errorlint         # errors.Is/As を使わない比較を検出
+    - wrapcheck         # レイヤー間のエラーラッピング漏れ（Clean Architecture向け）
+    - nilerr            # nil errを返すべき場所でのバグ
+    - nilnil            # (nil, nil) 返却アンチパターン
+    - forcetypeassert   # 型アサーションのパニックリスク
+    - exhaustive        # switch文の網羅性（StatusやTransactionStatusに有効）
+    - durationcheck     # time.Duration の掛け算バグ
+    - copyloopvar       # ループ変数キャプチャバグ（Go 1.22+）
+    - makezero          # makeで確保したスライスへのゼロインデックス代入
+    - wastedassign      # 無駄な代入
+    - reassign          # パッケージ変数の不正な再代入
+
+    # --- HTTP / DB / Context ---
+    - bodyclose         # HTTPレスポンスボディの閉じ忘れ
+    - noctx             # context なしHTTPリクエスト
+    - contextcheck      # context の受け渡し漏れ
+    - sqlclosecheck     # sql.Rows / sql.Stmt の閉じ忘れ
+    - rowserrcheck      # sql.Rows.Err() チェック漏れ
+    - containedctx      # 構造体へのcontext埋め込み検出
+
+    # --- セキュリティ ---
+    - gosec             # SQLインジェクション・ハードコード秘匿情報など
+    - bidichk           # Unicode双方向テキスト攻撃（Trojan Source）防止
+
+    # --- コード品質 ---
+    - cyclop            # 循環的複雑度
+    - funlen            # 関数の長さ制限
+    - gocritic          # 多様なスタイル・バグチェック
+    - revive            # golintの後継
+    - unconvert         # 不要な型変換
+    - unparam           # 使われていないパラメーター
+    - misspell          # スペルミス
+    - prealloc          # スライスの事前アロケーション提案
+    - perfsprint        # fmt.Sprintf を高速な代替に置き換え
+
+  disable:
+    - depguard
+    - wsl
+    - ireturn
+    - tagalign
+
+linters-settings:
+  funlen:
+    lines: 80
+    statements: 50
+  cyclop:
+    max-complexity: 15
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style

@@ -123,3 +123,64 @@ jobs:
           DB_PASSWORD: payfin
           REDIS_ADDR: localhost:6379
         run: go test -v -race -cover ./...
+
+  flutter-fmt:
+    name: Flutter Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # stable チャンネルの最新 Flutter を取得
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      # フォーマット差分があればdiffを表示してfail
+      - name: Check formatting
+        working-directory: mobile
+        run: dart format --output=none --set-exit-if-changed .
+
+  flutter-lint:
+    name: Flutter Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      # analysis_options.yaml のルールに従って静的解析
+      - name: Run flutter analyze
+        working-directory: mobile
+        run: flutter analyze
+
+  flutter-test:
+    name: Flutter Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: flutter pub get
+
+      # カバレッジ付きでテスト実行
+      - name: Run tests
+        working-directory: mobile
+        run: flutter test --coverage

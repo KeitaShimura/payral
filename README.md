@@ -158,7 +158,7 @@ payfin/
 ├── e2e/                     # Playwright
 ├── tests/tavern/            # Tavern API テスト
 ├── docs/design.md           # 設計書
-├── docker-compose.yml
+├── docker-compose.yaml
 └── README.md
 ```
 

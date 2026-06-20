@@ -6,33 +6,65 @@
 
 ## アーキテクチャ図
 
-```
-Internet
-    │ HTTPS
-    ▼
-WAF ──► ALB（SSL終端・ルーティング）
-              │
-              ├────────────── Stripe Webhook（入金通知）
-              ▼                      │
-    ECS Fargate（ConnectRPC / Go）◄──┘
-     ├─ Auth Service      JWT認証・発行
-     ├─ Transfer Service  送金・残高管理（コア）
-     └─ Account Service   口座管理
-      │         │          │          │
-      ▼         ▼          ▼          ▼
-   RDS      ElastiCache   SQS     Secrets
-PostgreSQL    Redis      （通知）   Manager
-（Multi-AZ） （冪等キー・
-             Rate制限）
-      │                   │
-      │                   ▼
-      │           Notification Worker
-      │             （ECS Task）
-      │                   │
-      ▼                   ▼
-   Stripe                SES
-（①入金リクエスト）    （メール通知）
- payfin ──► Stripe
+```mermaid
+graph TB
+    Client(["Client (Browser / App)"])
+    Stripe(["Stripe"])
+
+    subgraph AWS["AWS"]
+        WAF["WAF"]
+        ALB["ALB (SSL終端)"]
+
+        subgraph ECS["ECS Fargate"]
+            API["Go API
+(Auth / Transfer / Account)"]
+            Worker["Notification Worker"]
+        end
+
+        RDSProxy["RDS Proxy
+(Connection Pooling)"]
+
+        subgraph RDS["RDS PostgreSQL (Multi-AZ)"]
+            Primary[("Primary
+(Write)")]
+            Replica[("Read Replica
+(Read)")]
+        end
+
+        Redis[("ElastiCache Redis
+(冪等キー / Rate制限)")]
+
+        SNS["AWS SNS"]
+        EmailQ["SQS
+(メール用)"]
+        PushQ["SQS
+(Push用)"]
+        SES["AWS SES"]
+        Push["Push通知"]
+        Secrets["Secrets Manager"]
+    end
+
+    Client -->|HTTPS| WAF
+    WAF --> ALB
+    ALB --> API
+    Stripe -->|②Webhook 入金完了通知| ALB
+
+    API --> RDSProxy
+    RDSProxy -->|Write| Primary
+    RDSProxy -->|Read| Replica
+
+    API --> Redis
+    API -->|①入金依頼| Stripe
+
+    API --> SNS
+    SNS --> EmailQ
+    SNS --> PushQ
+    EmailQ --> Worker
+    PushQ --> Worker
+    Worker --> SES
+    Worker --> Push
+
+    API -.->|Fetch secrets| Secrets
 ```
 
 **入金フロー**（Stripeとの通信は2段階）
@@ -43,17 +75,6 @@ PostgreSQL    Redis      （通知）   Manager
 **送金フロー**（Stripe不要・payfin内で完結）
 
 - 自分の口座 `──►` 相手の口座（RDS内のトランザクションのみ）
-
-**通知ファンアウト構成**（SNS + SQS）
-
-```
-Transfer Service
-      │
-      ▼
-   AWS SNS（トピック）
-   ├──► SQS（メール用）──► Notification Worker ──► SES
-   └──► SQS（Push用） ──► Notification Worker ──► Push通知
-```
 
 ---
 

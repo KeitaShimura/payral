@@ -1,5 +1,5 @@
 .PHONY: build run test lint fmt migrate-up migrate-down docker-up docker-down \
-        mobile-test mobile-analyze mobile-fmt mobile-build-android mobile-build-ios
+        mobile-run mobile-test mobile-analyze mobile-fmt mobile-build-android mobile-build-ios
 
 BINARY := bin/payfin
 CMD     := ./cmd/api
@@ -34,6 +34,9 @@ migrate-create:
 	migrate create -ext sql -dir migrations -seq $(name)
 
 # Flutter (mobile)
+mobile-run:
+	cd mobile && flutter run
+
 mobile-test:
 	cd mobile && flutter test --coverage
 

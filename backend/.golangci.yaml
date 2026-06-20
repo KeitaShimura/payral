@@ -13,8 +13,7 @@ linters:
     # --- 正確性・安全性（金融システムのため最重視） ---
     - errcheck # エラー握り潰し検出
     - govet # 構造体コピーなど基本的なバグ
-    - staticcheck # 包括的な静的解析
-    - gosimple # 冗長なコードの簡略化
+    - staticcheck # 包括的な静的解析（v2でgosimpleを統合）
     - ineffassign # 無効な代入
     - unused # 未使用コード
     - errorlint # errors.Is/As を使わない比較を検出

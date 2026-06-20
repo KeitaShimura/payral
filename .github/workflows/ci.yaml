@@ -12,7 +12,7 @@ on:
 
 jobs:
   fmt:
-    name: Format
+    name: Go Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -41,7 +41,7 @@ jobs:
           fi
 
   lint:
-    name: Lint
+    name: Go Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -62,7 +62,7 @@ jobs:
           working-directory: backend
 
   test:
-    name: Test
+    name: Go Test
     runs-on: ubuntu-latest
 
     services:

@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # GitHub Actionsのバージョンを週次で自動更新
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # Goの依存パッケージを週次で自動更新
+  - package-ecosystem: gomod
+    directory: "/backend"
+    schedule:
+      interval: weekly
+
+  # Dartパッケージを週次で自動更新
+  - package-ecosystem: pub
+    directory: "/mobile"
+    schedule:
+      interval: weekly
+
+  # Reactを追加した際にコメントアウトを外す
+  # - package-ecosystem: npm
+  #   directory: "/web"
+  #   schedule:
+  #     interval: weekly

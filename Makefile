@@ -1,5 +1,6 @@
 .PHONY: build run test lint fmt migrate-up migrate-down docker-up docker-down \
-        mobile-run mobile-test mobile-analyze mobile-fmt mobile-build-android mobile-build-ios
+        mobile-run mobile-test mobile-analyze mobile-fmt mobile-build-android mobile-build-ios \
+        proto-gen proto-lint
 
 BINARY       := bin/payral
 CMD          := ./cmd/api
@@ -23,6 +24,13 @@ lint:
 
 fmt:
 	gofmt -w .
+
+# Proto code generation (buf)
+proto-gen:
+	buf generate
+
+proto-lint:
+	cd proto && buf lint
 
 # DB migration (golang-migrate)
 migrate-up:

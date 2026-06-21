@@ -15,3 +15,5 @@ plugins:
     out: backend/gen
     opt:
       - paths=source_relative
+  - remote: buf.build/protocolbuffers/dart
+    out: mobile/lib/gen

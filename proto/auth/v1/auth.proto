@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+// 認証サービス。ユーザー登録・ログイン・OIDC連携を担当する。
+package auth.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// メール/パスワード認証と OIDC 認証を提供するサービス。
+service AuthService {
+  // ユーザー登録。メールアドレスとパスワードで新規アカウントを作成する。
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+  // ログイン。認証成功時に JWT を発行する。
+  rpc Login(LoginRequest) returns (LoginResponse);
+  // OIDC 認可リクエスト。指定プロバイダーの認可エンドポイントへのリダイレクト URL を返す。
+  rpc OIDCAuthorize(OIDCAuthorizeRequest) returns (OIDCAuthorizeResponse);
+  // OIDC コールバック。認可コードを受け取り、id_token を検証して JWT を発行する。
+  rpc OIDCCallback(OIDCCallbackRequest) returns (OIDCCallbackResponse);
+}
+
+// ユーザー登録リクエスト。
+message RegisterRequest {
+  // ログインに使うメールアドレス。
+  string email = 1;
+  // 平文パスワード。サーバー側で bcrypt ハッシュ化する。
+  string password = 2;
+  // 表示名。
+  string name = 3;
+}
+
+// ユーザー登録レスポンス。登録と同時にログイン状態にするため JWT を返す。
+message RegisterResponse {
+  // 作成されたユーザーの ID（UUID v4）。
+  string user_id = 1;
+  // 発行された JWT。
+  string token = 2;
+  // JWT の有効期限。
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+// ログインリクエスト。
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+// ログインレスポンス。
+message LoginResponse {
+  // 発行された JWT。有効期限は 15 分。
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// OIDC 認可リクエスト。
+message OIDCAuthorizeRequest {
+  // 使用するプロバイダー名。例: "google"
+  string provider = 1;
+}
+
+// OIDC 認可レスポンス。
+message OIDCAuthorizeResponse {
+  // クライアントがリダイレクトすべき URL。state パラメーターを含む。
+  string redirect_url = 1;
+}
+
+// OIDC コールバックリクエスト。プロバイダーからのリダイレクト後に呼ぶ。
+message OIDCCallbackRequest {
+  string provider = 1;
+  // プロバイダーから受け取った認可コード。
+  string code = 2;
+  // CSRF 防止用の state。OIDCAuthorize で発行したものと一致するか検証する。
+  string state = 3;
+}
+
+// OIDC コールバックレスポンス。
+message OIDCCallbackResponse {
+  // 発行された JWT。
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}

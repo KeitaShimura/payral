@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+// 送金サービス。送金実行・取引履歴取得・取引詳細取得を担当する。
+package transfer.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// 送金の実行と取引履歴の参照を提供するサービス。
+service TransferService {
+  // 送金実行。冪等キーを Connect の HTTP ヘッダー（Idempotency-Key）で受け取る。
+  rpc Transfer(TransferRequest) returns (TransferResponse);
+  // 取引履歴取得。カーソルページネーションで一覧を返す。
+  rpc ListTransfers(ListTransfersRequest) returns (ListTransfersResponse);
+  // 取引 ID を指定して1件の詳細を取得する。
+  rpc GetTransfer(GetTransferRequest) returns (GetTransferResponse);
+}
+
+// 取引のステータス。
+enum TransactionStatus {
+  // 未指定（デフォルト値。使用しない）。
+  TRANSACTION_STATUS_UNSPECIFIED = 0;
+  // 処理中。DBトランザクション開始〜COMMIT 前の状態。
+  TRANSACTION_STATUS_PENDING = 1;
+  // 完了。残高更新と取引レコードの INSERT が成功した状態。
+  TRANSACTION_STATUS_COMPLETED = 2;
+  // 失敗。残高不足・バリデーションエラーなどでロールバックされた状態。
+  TRANSACTION_STATUS_FAILED = 3;
+}
+
+// 送金リクエスト。
+// Idempotency-Key は Connect の HTTP ヘッダー経由で渡すため、このメッセージには含めない。
+// クライアントは UUID v4 を生成してヘッダーにセットすること。
+message TransferRequest {
+  // 送金元口座 ID。
+  string from_account_id = 1;
+  // 送金先口座 ID。from_account_id と同じ値は不可。
+  string to_account_id = 2;
+  // 送金額（円単位）。1 以上の整数。
+  int64 amount = 3;
+  // 通貨コード。現在は "JPY" のみ。
+  string currency = 4;
+  // 送金メモ。例: "夕食代"。省略可。
+  optional string memo = 5;
+}
+
+// 送金レスポンス。
+message TransferResponse {
+  Transaction transaction = 1;
+}
+
+// 取引履歴取得リクエスト。
+message ListTransfersRequest {
+  // 絞り込む口座 ID（送金元・送金先どちらも対象）。
+  string account_id = 1;
+  // ページネーションカーソル。前のレスポンスの next_cursor を渡す。初回は省略。
+  optional string cursor = 2;
+  // 1ページあたりの取得件数。0 の場合はサーバーのデフォルト値を使用。
+  int32 limit = 3;
+}
+
+// 取引履歴取得レスポンス。
+message ListTransfersResponse {
+  repeated Transaction transactions = 1;
+  // 次ページのカーソル。これ以上データがない場合は省略される。
+  optional string next_cursor = 2;
+}
+
+// 取引詳細取得リクエスト。
+message GetTransferRequest {
+  string transfer_id = 1;
+}
+
+// 取引詳細取得レスポンス。
+message GetTransferResponse {
+  Transaction transaction = 1;
+}
+
+// 取引エンティティ。一度作成したら変更しない不変レコード。
+message Transaction {
+  // 取引 ID（UUID v4）。
+  string id = 1;
+  string from_account_id = 2;
+  string to_account_id = 3;
+  // 送金額（円単位）。
+  int64 amount = 4;
+  string currency = 5;
+  TransactionStatus status = 6;
+  optional string memo = 7;
+  // 送金実行日時。この値は変更しない。
+  google.protobuf.Timestamp created_at = 8;
+}

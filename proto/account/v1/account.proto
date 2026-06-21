@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+// 口座管理サービス。口座の作成・照会・残高確認を担当する。
+package account.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// 口座の作成・一覧取得・詳細取得を提供するサービス。
+service AccountService {
+  // 口座作成。認証済みユーザーに JPY 建て口座を作成する。初期残高は 0 円。
+  rpc CreateAccount(CreateAccountRequest) returns (CreateAccountResponse);
+  // 自分が所有する口座の一覧を取得する。
+  rpc ListAccounts(ListAccountsRequest) returns (ListAccountsResponse);
+  // 口座 ID を指定して残高・ステータスを取得する。
+  rpc GetAccount(GetAccountRequest) returns (GetAccountResponse);
+}
+
+// 口座のステータス。
+enum AccountStatus {
+  // 未指定（デフォルト値。使用しない）。
+  ACCOUNT_STATUS_UNSPECIFIED = 0;
+  // 通常状態。送金・入金ともに可能。
+  ACCOUNT_STATUS_ACTIVE = 1;
+  // 凍結中。不正利用疑い等で管理者が一時停止した状態。
+  ACCOUNT_STATUS_FROZEN = 2;
+  // 解約済み。残高は 0 であることが前提。
+  ACCOUNT_STATUS_CLOSED = 3;
+}
+
+// 口座エンティティ。
+message Account {
+  // 口座 ID（UUID v4）。
+  string id = 1;
+  // 所有者のユーザー ID。
+  string user_id = 2;
+  // 残高（円単位の整数）。float は誤差が出るため使わない。
+  int64 balance = 3;
+  // 通貨コード。現在は "JPY" のみ。
+  string currency = 4;
+  AccountStatus status = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+// 口座作成リクエスト。
+message CreateAccountRequest {
+  // 通貨コード。例: "JPY"
+  string currency = 1;
+}
+
+// 口座作成レスポンス。
+message CreateAccountResponse {
+  Account account = 1;
+}
+
+// 口座一覧取得リクエスト。呼び出し元のユーザーに紐づく口座を返す。
+message ListAccountsRequest {}
+
+// 口座一覧取得レスポンス。
+message ListAccountsResponse {
+  repeated Account accounts = 1;
+}
+
+// 口座詳細取得リクエスト。
+message GetAccountRequest {
+  string account_id = 1;
+}
+
+// 口座詳細取得レスポンス。
+message GetAccountResponse {
+  Account account = 1;
+}

@@ -1,8 +1,9 @@
 .PHONY: build run test lint fmt migrate-up migrate-down docker-up docker-down \
-        mobile-run mobile-test mobile-analyze mobile-fmt mobile-build-android mobile-build-ios
+        mobile-run mobile-test mobile-analyze mobile-fmt mobile-build-android mobile-build-ios \
+        proto-gen proto-lint
 
-BINARY := bin/payral
-CMD     := ./cmd/api
+BINARY       := bin/payral
+CMD          := ./cmd/api
 
 build:
 	go build -o $(BINARY) $(CMD)
@@ -23,15 +24,22 @@ lint:
 fmt:
 	gofmt -w .
 
+# Proto code generation (buf)
+proto-gen:
+	buf generate
+
+proto-lint:
+	cd proto && buf lint
+
 # DB migration (golang-migrate)
 migrate-up:
-	cd backend && migrate -path migrations -database "$$DATABASE_URL" up
+	migrate -path backend/migrations -database "$(DATABASE_URL)" up
 
 migrate-down:
-	cd backend && migrate -path migrations -database "$$DATABASE_URL" down 1
+	migrate -path backend/migrations -database "$(DATABASE_URL)" down 1
 
 migrate-create:
-	cd backend && migrate create -ext sql -dir migrations -seq $(name)
+	migrate create -ext sql -dir backend/migrations -seq $(name)
 
 # Flutter (mobile)
 mobile-run:

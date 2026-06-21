@@ -230,70 +230,144 @@ func (r *accountRepository) GetByUserID(ctx context.Context, userID uuid.UUID) (
 | `transactions`   | 送金レコード（変更不可） |
 | `audit_logs`     | 監査ログ（変更不可）     |
 
+### ER図
+
+```mermaid
+erDiagram
+    users {
+        uuid        id            PK
+        varchar255  email
+        varchar255  password_hash "nullable"
+        varchar100  name
+        varchar20   status        "active | suspended"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    oauth_accounts {
+        uuid        id         PK
+        uuid        user_id    FK
+        varchar50   provider   "google | github"
+        varchar255  subject    "OIDC sub claim"
+        varchar255  email
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    accounts {
+        uuid        id         PK
+        uuid        user_id    FK
+        bigint      balance    "円単位 >= 0"
+        varchar3    currency   "JPY"
+        varchar20   status     "active | frozen | closed"
+        bigint      version    "楽観的ロック"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    transactions {
+        uuid        id               PK
+        uuid        from_account_id  FK
+        uuid        to_account_id    FK
+        bigint      amount           "> 0"
+        varchar3    currency         "JPY"
+        varchar20   status           "pending | completed | failed"
+        varchar255  idempotency_key  "UNIQUE"
+        text        memo             "nullable"
+        timestamptz created_at       "immutable"
+    }
+
+    audit_logs {
+        uuid        id            PK
+        uuid        user_id       FK
+        varchar50   action        "transfer | login | ..."
+        varchar50   resource_type "transaction | account"
+        uuid        resource_id   "nullable"
+        jsonb       metadata      "nullable"
+        timestamptz created_at    "immutable"
+    }
+
+    users         ||--o{ oauth_accounts : "連携"
+    users         ||--o{ accounts       : "所有"
+    users         ||--o{ audit_logs     : "記録"
+    accounts      ||--o{ transactions   : "送金元"
+    accounts      ||--o{ transactions   : "送金先"
+```
+
 ### users
 
-| カラム          | 型           | 備考                                 |
-| --------------- | ------------ | ------------------------------------ |
-| `id`            | uuid         | PK / DEFAULT gen_random_uuid()       |
-| `email`         | varchar(255) | UNIQUE NOT NULL / index              |
-| `password_hash` | varchar(255) | bcrypt hash。OIDC専用ユーザーは NULL |
-| `name`          | varchar(100) | NOT NULL                             |
-| `status`        | varchar(20)  | 'active' \| 'suspended'              |
-| `created_at`    | timestamptz  | DEFAULT NOW()                        |
-| `updated_at`    | timestamptz  | DEFAULT NOW()                        |
+ユーザーの認証情報を管理するテーブル。メール/パスワード認証と OIDC 認証の両方に対応する。
+
+| カラム          | 型           | 説明                                                                |
+| --------------- | ------------ | ------------------------------------------------------------------- |
+| `id`            | uuid         | ユーザーを一意に識別するID。DBが自動生成する                        |
+| `email`         | varchar(255) | ログインに使うメールアドレス。重複不可                              |
+| `password_hash` | varchar(255) | bcrypt でハッシュ化したパスワード。Google などで登録した場合は NULL |
+| `name`          | varchar(100) | 表示名                                                              |
+| `status`        | varchar(20)  | アカウントの状態。`active`（通常）/ `suspended`（停止中）           |
+| `created_at`    | timestamptz  | レコード作成日時                                                    |
+| `updated_at`    | timestamptz  | レコード最終更新日時                                                |
 
 ### oauth_accounts
 
-| カラム       | 型           | 備考                                                |
-| ------------ | ------------ | --------------------------------------------------- |
-| `id`         | uuid         | PK / DEFAULT gen_random_uuid()                      |
-| `user_id`    | uuid         | FK → users.id / index                               |
-| `provider`   | varchar(50)  | 'google' \| 'github' など                           |
-| `subject`    | varchar(255) | プロバイダー側のユーザーID（OIDCの `sub` クレーム） |
-| `email`      | varchar(255) | プロバイダーから取得したメール（参照用）            |
-| `created_at` | timestamptz  | DEFAULT NOW()                                       |
-| `updated_at` | timestamptz  | DEFAULT NOW()                                       |
+Google などの外部プロバイダーと users を紐づけるテーブル。1ユーザーが複数のプロバイダーを連携できる。
 
-> UNIQUE 制約: `(provider, subject)`
+| カラム       | 型           | 説明                                                                              |
+| ------------ | ------------ | --------------------------------------------------------------------------------- |
+| `id`         | uuid         | レコードを一意に識別するID                                                        |
+| `user_id`    | uuid         | 紐づく users.id。外部キー                                                         |
+| `provider`   | varchar(50)  | 認証プロバイダー名。`google` / `github` など                                      |
+| `subject`    | varchar(255) | プロバイダー側のユーザーID（OIDC の `sub` クレーム）。provider と組み合わせて一意 |
+| `email`      | varchar(255) | プロバイダーから取得したメールアドレス。参照用（ログイン判定には使わない）        |
+| `created_at` | timestamptz  | 連携日時                                                                          |
+| `updated_at` | timestamptz  | レコード最終更新日時                                                              |
+
+> UNIQUE 制約: `(provider, subject)` — 同一プロバイダーの同一アカウントの二重登録を防ぐ
 
 ### accounts
 
-| カラム       | 型          | 備考                               |
-| ------------ | ----------- | ---------------------------------- |
-| `id`         | uuid        | PK                                 |
-| `user_id`    | uuid        | FK → users.id / index              |
-| `balance`    | bigint      | NOT NULL DEFAULT 0 ← int64・円単位 |
-| `currency`   | varchar(3)  | DEFAULT 'JPY'                      |
-| `status`     | varchar(20) | 'active' \| 'frozen' \| 'closed'   |
-| `version`    | bigint      | 楽観的ロック用（任意）             |
-| `created_at` | timestamptz |                                    |
-| `updated_at` | timestamptz |                                    |
+ユーザーが持つ口座と残高を管理するテーブル。1ユーザーが複数口座を持てる設計。
+
+| カラム       | 型          | 説明                                                                      |
+| ------------ | ----------- | ------------------------------------------------------------------------- |
+| `id`         | uuid        | 口座を一意に識別するID                                                    |
+| `user_id`    | uuid        | 口座の所有者。users.id への外部キー                                       |
+| `balance`    | bigint      | 残高（円単位の整数）。float は誤差が出るため使わない。負数は CHECK で禁止 |
+| `currency`   | varchar(3)  | 通貨コード。現在は `JPY` のみ                                             |
+| `status`     | varchar(20) | 口座の状態。`active`（通常）/ `frozen`（凍結）/ `closed`（解約済み）      |
+| `version`    | bigint      | 楽観的ロック用のバージョン番号。更新のたびにインクリメント                |
+| `created_at` | timestamptz | 口座作成日時                                                              |
+| `updated_at` | timestamptz | 残高更新などの最終更新日時                                                |
 
 ### transactions
 
-| カラム            | 型           | 備考                                 |
-| ----------------- | ------------ | ------------------------------------ |
-| `id`              | uuid         | PK                                   |
-| `from_account_id` | uuid         | FK → accounts.id / index             |
-| `to_account_id`   | uuid         | FK → accounts.id / index             |
-| `amount`          | bigint       | NOT NULL CHECK(amount > 0)           |
-| `currency`        | varchar(3)   | DEFAULT 'JPY'                        |
-| `status`          | varchar(20)  | 'pending' \| 'completed' \| 'failed' |
-| `idempotency_key` | varchar(255) | UNIQUE / index ← 二重送金防止        |
-| `memo`            | text         | nullable                             |
-| `created_at`      | timestamptz  | ← UPDATE しない（不変）              |
+送金の実行記録を保管するテーブル。一度 INSERT したら UPDATE/DELETE しない不変レコード。
+
+| カラム            | 型           | 説明                                                                            |
+| ----------------- | ------------ | ------------------------------------------------------------------------------- |
+| `id`              | uuid         | 取引を一意に識別するID                                                          |
+| `from_account_id` | uuid         | 送金元の口座ID。accounts.id への外部キー                                        |
+| `to_account_id`   | uuid         | 送金先の口座ID。accounts.id への外部キー                                        |
+| `amount`          | bigint       | 送金額（円単位）。0以下は CHECK で禁止                                          |
+| `currency`        | varchar(3)   | 通貨コード。現在は `JPY` のみ                                                   |
+| `status`          | varchar(20)  | 取引の状態。`pending`（処理中）/ `completed`（完了）/ `failed`（失敗）          |
+| `idempotency_key` | varchar(255) | クライアントが付与する重複防止キー（UUID v4）。同じキーの二重送金を防ぐ。UNIQUE |
+| `memo`            | text         | 送金メモ。「夕食代」など。省略可                                                |
+| `created_at`      | timestamptz  | 送金実行日時。この値は変更しない                                                |
 
 ### audit_logs
 
-| カラム          | 型          | 備考                                       |
-| --------------- | ----------- | ------------------------------------------ |
-| `id`            | uuid        | PK                                         |
-| `user_id`       | uuid        | FK → users.id / index                      |
-| `action`        | varchar(50) | 'transfer' \| 'login' \| 'account_created' |
-| `resource_type` | varchar(50) | 'transaction' \| 'account'                 |
-| `resource_id`   | uuid        | 対象レコードの ID                          |
-| `metadata`      | jsonb       | 追加情報（IP アドレスなど）                |
-| `created_at`    | timestamptz | ← INSERT のみ。UPDATE/DELETE 禁止          |
+誰がいつ何をしたかを記録する監査ログ。INSERT のみで UPDATE/DELETE は行わない。
+
+| カラム          | 型          | 説明                                                                                   |
+| --------------- | ----------- | -------------------------------------------------------------------------------------- |
+| `id`            | uuid        | ログエントリを一意に識別するID                                                         |
+| `user_id`       | uuid        | 操作を行ったユーザー。users.id への外部キー                                            |
+| `action`        | varchar(50) | 操作の種別。`transfer`（送金）/ `login`（ログイン）/ `account_created`（口座作成）など |
+| `resource_type` | varchar(50) | 操作対象のリソース種別。`transaction` / `account` など                                 |
+| `resource_id`   | uuid        | 操作対象のレコードID。削除されたレコードの追跡にも使えるよう uuid で保持               |
+| `metadata`      | jsonb       | 追加情報を自由形式で保存。IPアドレス・ユーザーエージェントなど                         |
+| `created_at`    | timestamptz | ログ記録日時。この値は変更しない                                                       |
 
 ### Read / Write 分離
 

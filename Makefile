@@ -1,8 +1,9 @@
 .PHONY: build run test lint fmt migrate-up migrate-down docker-up docker-down \
         mobile-run mobile-test mobile-analyze mobile-fmt mobile-build-android mobile-build-ios
 
-BINARY := bin/payral
-CMD     := ./cmd/api
+BINARY       := bin/payral
+CMD          := ./cmd/api
+DATABASE_URL := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable
 
 build:
 	go build -o $(BINARY) $(CMD)
@@ -25,13 +26,13 @@ fmt:
 
 # DB migration (golang-migrate)
 migrate-up:
-	cd backend && migrate -path migrations -database "$$DATABASE_URL" up
+	migrate -path backend/migrations -database "$(DATABASE_URL)" up
 
 migrate-down:
-	cd backend && migrate -path migrations -database "$$DATABASE_URL" down 1
+	migrate -path backend/migrations -database "$(DATABASE_URL)" down 1
 
 migrate-create:
-	cd backend && migrate create -ext sql -dir migrations -seq $(name)
+	migrate create -ext sql -dir backend/migrations -seq $(name)
 
 # Flutter (mobile)
 mobile-run:

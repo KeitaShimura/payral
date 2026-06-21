@@ -4,7 +4,6 @@
 
 BINARY       := bin/payral
 CMD          := ./cmd/api
-DATABASE_URL := postgres://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable
 
 build:
 	go build -o $(BINARY) $(CMD)

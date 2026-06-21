@@ -17,6 +17,10 @@ dependencies:
   # Navigation
   go_router: ^17.3.0
 
+  # Protobuf runtime (generated code requires these)
+  protobuf: ^4.0.0
+  fixnum: ^1.1.0
+
   # HTTP
   dio: ^5.0.0
 

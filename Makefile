@@ -1,58 +1,66 @@
-.PHONY: build run test lint fmt migrate-up migrate-down docker-up docker-down \
-        mobile-run mobile-test mobile-analyze mobile-fmt mobile-build-android mobile-build-ios \
-        proto-gen proto-lint
+.PHONY: \
+	backend-build backend-run backend-test backend-lint backend-fmt \
+	backend-build-worker backend-run-worker \
+	backend-migrate-up backend-migrate-down backend-migrate-down-one backend-migrate-create \
+	mobile-run mobile-test mobile-lint mobile-analyze mobile-fmt \
+	mobile-build-android mobile-build-ios \
+	proto-gen proto-fmt proto-lint \
+	docker-up docker-down
 
-BINARY       := bin/payral
-CMD          := ./cmd/api
+API_CMD    := ./cmd/api
+WORKER_CMD := ./cmd/worker
+# ─── Backend (Go) ────────────────────────────────────────────────────────────
 
-build:
-	go build -o $(BINARY) $(CMD)
+backend-build:
+	cd backend && go build $(API_CMD)
 
-run:
-	go run $(CMD)
+backend-run:
+	cd backend && go run $(API_CMD)
 
-test:
-	go test ./... -v -race
+backend-build-worker:
+	cd backend && go build $(WORKER_CMD)
 
-test-cover:
-	go test ./... -coverprofile=coverage.out
-	go tool cover -html=coverage.out
+backend-run-worker:
+	cd backend && go run $(WORKER_CMD)
 
-lint:
+backend-fmt:
+	cd backend && go fmt ./...
+
+backend-lint:
 	cd backend && golangci-lint run ./...
 
-fmt:
-	gofmt -w .
+backend-test:
+	cd backend && go test ./... -v -race
 
-# Proto code generation (buf)
-proto-gen:
-	buf generate
-
-proto-lint:
-	cd proto && buf lint
-
-# DB migration (golang-migrate)
-migrate-up:
-	migrate -path backend/migrations -database "$(DATABASE_URL)" up
-
-migrate-down:
-	migrate -path backend/migrations -database "$(DATABASE_URL)" down 1
-
-migrate-create:
+backend-migrate-create:
 	migrate create -ext sql -dir backend/migrations -seq $(name)
 
-# Flutter (mobile)
+backend-migrate-down:
+	migrate -path backend/migrations -database "$(DATABASE_URL)" down
+
+backend-migrate-up:
+	migrate -path backend/migrations -database "$(DATABASE_URL)" up
+
+backend-migrate-down-one:
+	migrate -path backend/migrations -database "$(DATABASE_URL)" down 1
+
+
+# ─── Mobile (Flutter) ────────────────────────────────────────────────────────
+
 mobile-run:
 	cd mobile && flutter run
 
-mobile-test:
-	cd mobile && flutter test --coverage
+mobile-fmt:
+	cd mobile && dart format .
+
+mobile-lint:
+	cd mobile && dart run custom_lint
 
 mobile-analyze:
 	cd mobile && flutter analyze
 
-mobile-fmt:
-	cd mobile && dart format .
+mobile-test:
+	cd mobile && flutter test
 
 mobile-build-android:
 	cd mobile && flutter build apk --release
@@ -60,13 +68,25 @@ mobile-build-android:
 mobile-build-ios:
 	cd mobile && flutter build ios --release
 
-# Docker Compose (local dev)
+# ─── Proto ───────────────────────────────────────────────────────────────────
+
+proto-gen:
+	buf generate
+
+proto-fmt:
+	cd proto && buf fmt -w
+
+proto-lint:
+	cd proto && buf lint
+
+# ─── Docker Compose (local dev) ──────────────────────────────────────────────
+
 docker-up:
 	docker compose up -d
 
 docker-down:
 	docker compose down
 
-# Load .env
+# ─── Load .env ───────────────────────────────────────────────────────────────
+
 -include .env
-export

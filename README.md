@@ -67,14 +67,18 @@ graph TB
     API -.->|Fetch secrets| Secrets
 ```
 
-**入金フロー**（Stripeとの通信は2段階）
+**入金フロー** — 外の世界からお金を「持ち込む」操作
 
-1. Transfer Service `──►` Stripe API（①入金を依頼）
-2. Stripe `──►` Transfer Service（②入金完了をWebhookで通知 → 口座残高に反映）
+クレジットカードや銀行口座など、payral の外にある本物のお金を残高に反映させる。外部の決済処理が必要なため Stripe を経由する。
 
-**送金フロー**（Stripe不要・payral内で完結）
+1. Transfer Service `──►` Stripe API（①カード決済を依頼）
+2. Stripe `──►` Transfer Service（②決済完了を Webhook で通知 → 口座残高に反映）
 
-- 自分の口座 `──►` 相手の口座（RDS内のトランザクションのみ）
+**送金フロー** — payral 内でお金を「動かす」操作
+
+すでに payral 内にある残高を別ユーザーへ移すだけ。お金は外に出ないので DB の数字を書き換えるだけで完結し、Stripe は不要。
+
+- 自分の口座 `──►` 相手の口座（RDS のトランザクションのみ・外部サービス呼び出しなし）
 
 ---
 
@@ -128,18 +132,35 @@ graph TB
 
 ```
 payral/
-├── backend/
-│   ├── cmd/server/main.go
-│   ├── internal/
-│   │   ├── domain/          # model / repository interface / errors
-│   │   ├── usecase/         # transfer / account / auth
-│   │   ├── interface/       # handler / middleware
-│   │   └── infrastructure/  # postgres / redis / sqs
-│   ├── proto/               # Protobuf定義
-│   ├── migrations/
-│   ├── Dockerfile
-│   └── Makefile
-├── mobile/                  # Flutter（ログイン・送金・取引履歴）
+├── backend/                         # Go モジュール（API + Worker を同一モジュールで管理）
+│   ├── cmd/
+│   │   ├── api/
+│   │   │   └── main.go              # API サーバーのエントリーポイント
+│   │   └── worker/
+│   │       └── main.go              # Notification Worker のエントリーポイント
+│   ├── domain/
+│   │   ├── model/                   # エンティティ・値オブジェクト・ドメインエラー
+│   │   ├── repository/              # リポジトリインターフェース
+│   │   └── event/                   # ドメインイベント定義
+│   ├── usecase/
+│   │   ├── auth/                    # 認証・OIDC
+│   │   ├── account/                 # 口座作成・残高照会
+│   │   ├── transfer/                # 送金・入金
+│   │   └── notification/            # メール・Push 送信（Worker 専用）
+│   ├── infrastructure/
+│   │   ├── postgres/                # RDS 実装（repository impl）
+│   │   ├── redis/                   # ElastiCache 実装
+│   │   ├── sqs/                     # SQS コンシューマー・プロデューサー
+│   │   ├── ses/                     # SES メール送信
+│   │   ├── appctx/                  # コンテキストキー管理
+│   │   ├── logger/                  # slog 初期化
+│   │   ├── middleware/              # CORS・RequestID・ヘルスチェック
+│   │   ├── interceptor/             # 認証・ログ・リカバリ・レートリミット
+│   │   └── circuitbreaker/          # 外部サービス呼び出し保護
+│   ├── gen/                         # buf generate で自動生成（commit しない）
+│   ├── migrations/                  # golang-migrate SQL ファイル
+│   └── Dockerfile                   # マルチステージビルド（api / worker を切り替え）
+├── mobile/                          # Flutter（ログイン・送金・取引履歴）
 │   ├── lib/
 │   │   ├── features/
 │   │   │   ├── auth/
@@ -148,17 +169,20 @@ payral/
 │   │   │   │   └── presentation/    # page / widget / notifier
 │   │   │   ├── account/
 │   │   │   └── transfer/
+│   │   ├── infrastructure/
+│   │   │   ├── auth/                # TokenStorage（flutter_secure_storage）
+│   │   │   ├── network/             # ConnectClient・エラーハンドリング
+│   │   │   └── logger/              # AppLogger（logger パッケージ）
 │   │   └── core/
-│   │       ├── network/             # Dio + JWT interceptor
-│   │       ├── router/              # go_router
-│   │       └── error/               # Failure types
+│   │       └── router/              # go_router
 │   └── test/
-├── web/                     # React（Web版、追加予定）
-├── terraform/               # VPC / ECS / RDS / Redis / SQS
-├── e2e/                     # Playwright
-├── tests/tavern/            # Tavern API テスト
-├── docs/design.md           # 設計書
+├── proto/                           # Protobuf 定義（auth / account / transfer）
+├── terraform/                       # VPC / ECS / RDS / Redis / SQS / WAF
+├── e2e/                             # Playwright E2E テスト
+├── tests/tavern/                    # Tavern API テスト
+├── docs/design.md                   # 設計書
 ├── docker-compose.yaml
+├── buf.gen.yaml
 └── README.md
 ```
 
@@ -204,18 +228,25 @@ make coverage      # カバレッジ計測
 
 ## インフラ構成（AWS）
 
-| レイヤー | サービス                       | 用途                    | 設定ポイント                               |
-| -------- | ------------------------------ | ----------------------- | ------------------------------------------ |
-| Edge     | WAF + ALB                      | DDoS・SQLi遮断・SSL終端 | ACMで証明書自動更新                        |
-| App      | ECS Fargate                    | Goコンテナ実行          | プライベートサブネット・IAMロール最小権限  |
-| DB       | RDS PostgreSQL（Primary）      | メインDB・書き込み専用  | Multi-AZ・自動フェイルオーバー・暗号化有効 |
-| DB       | RDS PostgreSQL（Read Replica） | 参照系クエリ分離        | 取引履歴・残高照会                         |
-| DB       | RDS Proxy                      | Connection Pooling      | ECSタスク増加時のmax_connections枯渇防止   |
-| Cache    | ElastiCache Redis              | 冪等キー・レート制限    | インターネット非公開                       |
-| Queue    | SNS + SQS                      | 通知ファンアウト        | Dead Letter Queue付き                      |
-| Secrets  | Secrets Manager                | DB接続情報・APIキー     | 環境変数に平文を置かない                   |
-| IaC      | Terraform                      | 全リソース管理          | tfstate は S3+DynamoDB で locking          |
-| 監視     | CloudWatch                     | メトリクス・アラート    | エラー率・レイテンシのアラーム設定         |
+リクエストが届いてからレスポンスが返るまでの流れ：
+
+1. **WAF** が不正アクセス（DDoS・SQLインジェクション）を弾く
+2. **ALB** が受け取り、ECS上のコンテナへ振り分ける
+3. **Go API** が処理し、RDS / Redis に読み書きする
+4. 通知が必要な場合 **SNS → SQS → Worker** が非同期で送信する
+
+| レイヤー | サービス                 | 役割                                | ポイント                                                         |
+| -------- | ------------------------ | ----------------------------------- | ---------------------------------------------------------------- |
+| Edge     | WAF + ALB                | 不正アクセスを防ぐ門番 + 振り分け役 | SSL証明書はACMで自動更新。手動更新不要                           |
+| App      | ECS Fargate              | Goコンテナの実行環境                | インターネットから直接見えないサブネットに置く。権限は必要最小限 |
+| DB       | RDS PostgreSQL (Primary) | 書き込み専用のメインDB              | 2つのAZに冗長化。障害時は自動で切り替わる                        |
+| DB       | RDS PostgreSQL (Replica) | 読み取り専用のサブDB                | 履歴照会など参照系をこちらに流してPrimaryの負荷を下げる          |
+| DB       | RDS Proxy                | DBへの接続を束ねるプロキシ          | タスクが増えてもDB接続数が爆発しない。接続枯渇を防ぐ             |
+| Cache    | ElastiCache Redis        | 高速な一時データ置き場              | VPC内のみアクセス可。外部から直接触れない                        |
+| Queue    | SNS + SQS                | 通知の非同期配信                    | 送信失敗してもDLQに退避して後から再処理できる                    |
+| Secrets  | Secrets Manager          | 秘密情報の金庫                      | DBパスワード・APIキーをコードや環境変数に平文で書かない          |
+| IaC      | Terraform                | インフラをコードで管理              | tfstateはS3+DynamoDBで管理。複数人が同時変更しても競合しない     |
+| 監視     | CloudWatch               | 死活監視・通知                      | エラー率やレイテンシが閾値を超えたらアラームで即通知             |
 
 ---
 

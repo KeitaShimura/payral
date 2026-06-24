@@ -204,24 +204,25 @@ payral/
 git clone https://github.com/{your-name}/payral.git
 cd payral
 docker-compose up -d
-make migrate-up
+make backend-migrate-up
 curl http://localhost:8080/health
 ```
 
 ### Makefile コマンド
 
 ```bash
-make dev           # ホットリロードで起動
-make proto-gen     # Protobuf コード生成
-make test          # ユニットテスト
-make test-int      # 統合テスト
-make test-api      # Tavern API テスト
-make test-e2e      # Playwright E2E テスト
-make test-all      # 全テスト
-make migrate-up    # マイグレーション実行
-make migrate-down  # ロールバック
-make lint          # golangci-lint
-make coverage      # カバレッジ計測
+make backend-run              # API サーバー起動
+make backend-run-worker       # Notification Worker 起動
+make backend-test             # ユニットテスト（race detector付き）
+make backend-lint             # golangci-lint
+make backend-fmt              # go fmt
+make backend-migrate-up       # マイグレーション実行
+make backend-migrate-down     # 全ロールバック
+make backend-migrate-down-one # 1件ロールバック
+make proto-gen                # Protobuf コード生成
+make proto-fmt                # Protobuf フォーマット
+make docker-up                # ローカル開発環境起動
+make docker-down              # ローカル開発環境停止
 ```
 
 ---

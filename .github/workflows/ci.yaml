@@ -116,7 +116,7 @@ jobs:
           DATABASE_URL: postgres://payral:payral@localhost:5432/payral_test?sslmode=disable
         run: |
           if ls backend/migrations/*.sql 2>/dev/null; then
-            make migrate-up
+            make backend-migrate-up
           else
             echo "No migration files found, skipping"
           fi
